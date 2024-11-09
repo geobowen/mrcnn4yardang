@@ -17,12 +17,13 @@ import imgaug
 
  
 #os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
 # Root directory of the project
-#ROOT_DIR = os.getcwd()
- 
-ROOT_DIR = os.path.abspath("../..")
+ROOT_DIR = os.getcwd()
+#ROOT_DIR = os.path.abspath("../..")
+
 # Directory to save logs and trained model
-MODEL_DIR = os.path.join(ROOT_DIR, "yardanglogs_2022")
+MODEL_DIR = os.path.join(ROOT_DIR, "logs")
  
 iter_num=0
 
@@ -33,24 +34,23 @@ from mrcnn import visualize
 from mrcnn.model import log
  
 # Local path to trained weights file
-COCO_MODEL_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")  #mask_rcnn_coco.h5  mask_rcnn_shapes_0040.h5
-# Download COCO trained weights from Releases if needed
+COCO_MODEL_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
+
 # Download COCO trained weights from Releases if needed
 if not os.path.exists(COCO_MODEL_PATH):
     utils.download_trained_weights(COCO_MODEL_PATH)
  
  
-class ShapesConfig(Config):
-    """Configuration for training on the toy shapes dataset.
+class YardangConfig(Config):
+    
+    """Configuration for training on the yardang dataset.
     Derives from the base Config class and overrides values specific
-    to the toy shapes dataset.
-    
-    
+    to the yardang dataset.
     """
     
     BACKBONE = "resnet101"
     # Give the configuration a recognizable name
-    NAME = "shapes"
+    NAME = "yardang"
  
     # Train on 1 GPU and 8 images per GPU. We can put multiple images on each
     # GPU because the images are small. Batch size is 8 (GPUs * images/GPU).
@@ -58,7 +58,7 @@ class ShapesConfig(Config):
     IMAGES_PER_GPU = 1
  
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 3  # background + 3 shapes
+    NUM_CLASSES = 1 + 3  # background + 3 types of yardang
  
     # Use small images for faster training. Set the limits of the small side
     # the large side, and that determines the image shape.
@@ -80,16 +80,17 @@ class ShapesConfig(Config):
     VALIDATION_STEPS = 20
  
  
-config = ShapesConfig()
+config = YardangConfig()
 config.display()
  
-class DrugDataset(utils.Dataset):
-    # 得到该图中有多少个实例（物体）
+class YardangDataset(utils.Dataset):
+    # Count of the instances(objects)
     def get_obj_index(self, image):
         n = np.max(image)
         return n
  
-    # 解析labelme中得到的yaml文件，从而得到mask每一层对应的实例标签
+    # Parse the yaml file obtained from LabelMe 
+    # and get corresponding labels for each layer of the mask
     def from_yaml_get_class(self, image_id):
         info = self.image_info[image_id]
         with open(info['yaml_path']) as f:
@@ -98,7 +99,7 @@ class DrugDataset(utils.Dataset):
             del labels[0]
         return labels
  
-    # 重新写draw_mask
+    # Override draw_mask
     def draw_mask(self, num_obj, mask, image,image_id):
         #print("draw_mask-->",image_id)
         #print("self.image_info",self.image_info)
@@ -115,24 +116,16 @@ class DrugDataset(utils.Dataset):
                         mask[j, i, index] = 1
         return mask
  
-    # 重新写load_shapes，里面包含自己的类别,可以任意添加
-    # 并在self.image_info信息中添加了path、mask_path 、yaml_path
-    # yaml_pathdataset_root_path = "/tongue_dateset/"
-    # img_floder = dataset_root_path + "rgb"
-    # mask_floder = dataset_root_path + "mask"
-    # dataset_root_path = "/tongue_dateset/"
-    def load_shapes(self, count, img_floder, mask_floder, imglist, dataset_root_path):
-        """Generate the requested number of synthetic images.
-        count: number of images to generate.
-        height, width: the size of the generated images.
-        """
-        # Add classes,可通过这种方式扩展多个物体
-        self.add_class("shapes", 1, "long-ridge")
-        self.add_class("shapes", 2, "mesa")
-        self.add_class("shapes", 3, "whaleback")
+    # Override load_image
+    def load_image(self, count, img_floder, mask_floder, imglist, dataset_root_path):
+        
+        # Add classes
+        self.add_class("yardang", 1, "long-ridge")
+        self.add_class("yardang", 2, "mesa")
+        self.add_class("yardang", 3, "whaleback")
 
         for i in range(count):
-            # 获取图片宽和高
+            # image height & width
  
             filestr = imglist[i].split(".")[0]
             #print(imglist[i],"-->",cv_img.shape[1],"--->",cv_img.shape[0])
@@ -142,13 +135,14 @@ class DrugDataset(utils.Dataset):
             yaml_path = dataset_root_path + "labelme_json/" + filestr + "_json/info.yaml"
             print(dataset_root_path + "labelme_json/" + filestr + "_json/img.png")
             cv_img = cv2.imread(dataset_root_path + "labelme_json/" + filestr + "_json/img.png")
- 
-            self.add_image("shapes", image_id=i, path=img_floder + "/" + imglist[i],
+
+            #self.add_image
+            super.add_image("yardang", image_id=i, path=img_floder + "/" + imglist[i],
                            width=cv_img.shape[1], height=cv_img.shape[0], mask_path=mask_path, yaml_path=yaml_path)
- 
-    # 重写load_mask
+
+    # Override load_mask
     def load_mask(self, image_id):
-        """Generate instance masks for shapes of the given image ID.
+        """Generate instance masks for yardangs of the given image ID.
         """
         global iter_num
         print("image_id",image_id)
@@ -168,13 +162,10 @@ class DrugDataset(utils.Dataset):
         labels_form = []
         for i in range(len(labels)):
             if labels[i].find("long-ridge") != -1:
-                # print "box"
                 labels_form.append("long-ridge")
             elif labels[i].find("mesa")!=-1:
-                #print "column"
                 labels_form.append("mesa")
             elif labels[i].find("whaleback")!=-1:
-                #print "package"
                 labels_form.append("whaleback")
             
         class_ids = np.array([self.class_names.index(s) for s in labels_form])
@@ -190,36 +181,29 @@ def get_ax(rows=1, cols=1, size=8):
     _, ax = plt.subplots(rows, cols, figsize=(size * cols, size * rows))
     return ax
  
-#基础设置
-dataset_root_path="train_data/"
+
+dataset_root_path="../dataset/train_data/"
 img_floder = dataset_root_path + "pic"
 mask_floder = dataset_root_path + "cv2_mask"
-val_dataset_root_path="val_data/"
+val_dataset_root_path="../dataset/val_data/"
 val_img_floder = val_dataset_root_path + "pic"
 val_mask_floder = val_dataset_root_path + "cv2_mask"
 
-#yaml_floder = dataset_root_path
 imglist = os.listdir(img_floder)
 count = len(imglist)
 
 val_imglist=os.listdir(val_img_floder)
 val_count=len(val_imglist)
  
-#train与val数据集准备
-dataset_train = DrugDataset()
-dataset_train.load_shapes(count, img_floder, mask_floder, imglist,dataset_root_path)
+# Prepare train and val data
+dataset_train = YardangDataset()
+dataset_train.load_image(count, img_floder, mask_floder, imglist,dataset_root_path)
 dataset_train.prepare()
-
-#dataset_val = DrugDataset()
-#dataset_val.load_shapes(count, img_floder, mask_floder, imglist,dataset_root_path)
-#dataset_val.prepare()
- 
 #print("dataset_train-->",dataset_train._image_ids)
 
-dataset_val = DrugDataset()
-dataset_val.load_shapes(val_count, val_img_floder, val_mask_floder, val_imglist,val_dataset_root_path)
+dataset_val = YardangDataset()
+dataset_val.load_image(val_count, val_img_floder, val_mask_floder, val_imglist,val_dataset_root_path)
 dataset_val.prepare()
- 
 #print("dataset_val-->",dataset_val._image_ids)
  
 # Load and display random samples
@@ -261,24 +245,6 @@ augmentation=imgaug.augmenters.Sometimes(0.5,imgaug.augmenters.OneOf([
 # layers. You can also pass a regular expression to select
 # which layers to train by name pattern.
 
-# model.train(dataset_train, dataset_val,
-            # learning_rate=config.LEARNING_RATE*2,
-            # epochs=20,
-            # layers='heads',
-            # augmentation=augmentation)
-
-# model.train(dataset_train, dataset_val,
-            # learning_rate=config.LEARNING_RATE,
-            # epochs=50,
-            # layers='3+',
-            # augmentation=augmentation)
-            
-# model.train(dataset_train, dataset_val,
-            # learning_rate=config.LEARNING_RATE,
-            # epochs=80,
-            # layers='4+',
-            # augmentation=augmentation)
-
 model.train(dataset_train, dataset_val,
             learning_rate=config.LEARNING_RATE*2,
             epochs=5,
@@ -292,12 +258,6 @@ model.train(dataset_train, dataset_val,
 # train by name pattern.
 model.train(dataset_train, dataset_val,
             learning_rate=config.LEARNING_RATE,
-            epochs=25,
-            layers="all",
-            augmentation=augmentation)
-               
-model.train(dataset_train, dataset_val,
-            learning_rate=config.LEARNING_RATE/10,
-            epochs=45,
+            epochs=40,
             layers="all",
             augmentation=augmentation)
