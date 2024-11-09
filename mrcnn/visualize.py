@@ -6,6 +6,10 @@ Copyright (c) 2017 Matterport, Inc.
 Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
 """
+"""
+Modify display_instances
+Add display_binary
+"""
 import os
 import sys
 import random
@@ -17,6 +21,7 @@ from skimage.measure import find_contours
 import matplotlib.pyplot as plt
 from matplotlib import patches,  lines
 from matplotlib.patches import Polygon
+from matplotlib.collections import PatchCollection
 import IPython.display
 
 # Root directory of the project
@@ -68,7 +73,7 @@ def random_colors(N, bright=True):
     return colors
 
 
-def apply_mask(image, mask, color, alpha=0.5):
+def apply_mask(image, mask, color, alpha=0):  #default alpha=0.5
     """Apply the given mask to the image.
     """
     for c in range(3):
@@ -82,7 +87,7 @@ def apply_mask(image, mask, color, alpha=0.5):
 def display_instances(count, image, boxes, masks, class_ids, class_names,
                       scores=None, title="",
                       figsize=(16, 16), ax=None,
-                      show_mask=True, show_bbox=True,
+                      show_mask=True, show_bbox=None,
                       colors=None, captions=None):
     """
     boxes: [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
@@ -142,8 +147,8 @@ def display_instances(count, image, boxes, masks, class_ids, class_names,
             caption = "{} {:.3f}".format(label, score) if score else label
         else:
             caption = captions[i]
-        ax.text(x1, y1 + 8, caption,
-                color='w', size=11, backgroundcolor="none")
+        #ax.text(x1, y1 + 8, caption,
+        #        color='w', size=11, backgroundcolor="none")
 
         # Mask
         mask = masks[:, :, i]
@@ -171,15 +176,69 @@ def display_instances(count, image, boxes, masks, class_ids, class_names,
             (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
         padded_mask[1:-1, 1:-1] = mask
         contours = find_contours(padded_mask, 0.5)
+        pat=[]      
         for verts in contours:
             # Subtract the padding and flip (y, x) to (x, y)
             verts = np.fliplr(verts) - 1
-            p = Polygon(verts, facecolor="none", edgecolor=color)
-            ax.add_patch(p)
+            p = Polygon(verts,facecolor='None',edgecolor=color,lw=2)  #facecolor='None'
+            ax.add_patch(p)                                                                           
+            
     ax.imshow(masked_image.astype(np.uint8))
     if auto_show:
+        fig = plt.gcf()
+ 
+        fig.set_size_inches(width/96.0,height/96.0)#输出width*height像素
+ 
+        plt.subplots_adjust(top=1,bottom=0,left=0,right=1,hspace =0, wspace =0)#输出图像#边框设置
+ 
+        plt.margins(0,0)                 
+        #plt.savefig("G:/data/4-extra/ex_result_3m/%s"%(str(count[:-4])))                
         plt.show()
 
+def display_binary(resultpath,count, image, boxes, masks, class_ids, figsize=(16,16),ax=None,):
+    
+    #忽略分类差异，将分割结果输出为二值图
+    height, width = image.shape[:2]
+    print(height)
+    print(width)
+    # Number of instances
+    N = boxes.shape[0]
+    if not N:
+        print("\n*** No instances to display *** \n")
+    else:
+        assert boxes.shape[0] == masks.shape[-1] == class_ids.shape[0]
+    
+    auto_show = False
+    if not ax:
+        _, ax = plt.subplots(1, figsize=figsize)
+        auto_show = True
+    
+    stacked_mask = np.zeros((masks.shape[0], masks.shape[1]), dtype=np.uint8)
+    
+    for i in range(N):
+        
+        #Mask
+        mask = masks[:,:,i]
+        stacked_mask = stacked_mask|mask
+    
+    ax.imshow(stacked_mask.astype(np.uint8))
+    if auto_show:
+        #plt.axis('off')
+        fig = plt.gcf()
+ 
+        fig.set_size_inches(width/96.0,height/96.0)#输出width*height像素
+        
+        #fig.set_size_inches(height/96.0,width/96.0)
+ 
+        plt.subplots_adjust(top=1,bottom=0,left=0,right=1,hspace =0, wspace =0)#输出图像#边框设置
+ 
+        plt.margins(0,0)
+
+        #plt.savefig("E:/package/code/Mask_RCNN/samples/yardang/val_result/%s.tif"%(str(count[:])),dpi=300) #
+        #plt.savefig("G:/data/4-extra/ex_result_3m/%s"%(str(count[:-4])))
+        #plt.savefig("E:/data/1134/18/binary/%s.png"%(str(count[:-4])),dpi=96)
+        plt.savefig((resultpath + "/%s.png"%(str(count[:-4]))), dpi = 96)
+        #plt.show()
 
 def display_differences(image,
                         gt_box, gt_class_id, gt_mask,
@@ -201,6 +260,7 @@ def display_differences(image,
     scores = np.concatenate([np.zeros([len(gt_match)]), pred_score])
     boxes = np.concatenate([gt_box, pred_box])
     masks = np.concatenate([gt_mask, pred_mask], axis=-1)
+    print(class_ids.shape[0],boxes.shape[0],masks.shape[-1])
     # Captions per instance show score/IoU
     captions = ["" for m in gt_match] + ["{:.2f} / {:.2f}".format(
         pred_score[i],
@@ -214,7 +274,7 @@ def display_differences(image,
         image,
         boxes, masks, class_ids,
         class_names, scores, ax=ax,
-        show_bbox=show_box, show_mask=show_mask,
+        show_bbox=None, show_mask=show_mask,
         colors=colors, captions=captions,
         title=title)
 
